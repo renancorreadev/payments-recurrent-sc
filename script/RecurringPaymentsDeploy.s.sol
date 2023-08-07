@@ -6,10 +6,15 @@ import {RecurringPayments} from "../src/RecurringPayments.sol";
 
 contract RecurringPaymentsDeploy is Script {
     address public recurringPaymentsAddress;
+    address public adminAddress;
+
+    constructor(address _adminAddress) {
+        adminAddress = _adminAddress;
+    }
 
     function run() external {
         vm.startBroadcast();
-        recurringPaymentsAddress = address(new RecurringPayments());
+        recurringPaymentsAddress = address(new RecurringPayments(adminAddress));
         vm.stopBroadcast();
     }
 }

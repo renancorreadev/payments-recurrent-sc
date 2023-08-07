@@ -5,8 +5,18 @@ import "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 
 contract RecurringPayments {
     uint public nextPlanId;
+
+    /** 
+     * @dev Criar um plano de pagamento recorrente 
+     * @param seller - Endereço do vendedor do plano
+     * @param broker - Endereço do corretor do plano
+     * @param token - Endereço do token do plano
+     * @param amount - Valor do plano
+     * @param period - Periodo do pagamento do plano
+     */
     struct Plan {
-        address receiver;
+        address seller;
+        address broker;
         address token;
         uint amount;
         uint period;
@@ -16,32 +26,42 @@ contract RecurringPayments {
         uint start;
         uint period;
     }
+
+    address public admin ;
     mapping(uint => Plan) public plans;
     mapping(address => mapping(uint => Subscription)) public subscriptions;
 
-    event PlanCreated(address receiver, uint planId, uint date);
+    event PlanCreated(address seller, address broker, uint planId, uint date);
     event SubscriptionCreated(address payer, uint planId, uint date);
     event SubscriptionCancelled(address payer, uint planId, uint date);
+
     event PaymentSent(
-        address from,
-        address to,
+        address payer,
         uint amount,
         uint planId,
         uint date
     );
 
+    constructor(address _admin)  {
+        admin = _admin;
+    }
+
+
     function getPlanId() public view returns (uint256) {
         return nextPlanId;
     }
 
+
     function getPlan(uint planId) public view returns (
-        address receiver,
+        address seller,
+        address broker,
         address token,
         uint amount,
         uint period
     ) {
         Plan storage plan = plans[planId];
-        return (plan.receiver, plan.token, plan.amount, plan.period);
+
+        return (plan.seller, plan.broker, plan.token, plan.amount, plan.period);
     }
 
     function isSubscribed(address payer, uint planId) public view returns (bool) {
@@ -51,7 +71,8 @@ contract RecurringPayments {
 
     
     function createPlan(
-        address receiver,
+        address seller,
+        address broker,
         address token,
         uint amount,
         uint period
@@ -59,24 +80,38 @@ contract RecurringPayments {
         require(token != address(0), "address cannot be null address");
         require(amount > 0, "amount needs to be > 0");
         require(period > 0, "period needs to be > 0");
-        plans[nextPlanId] = Plan(receiver, token, amount, period);
+        plans[nextPlanId] = Plan(seller, broker, token, amount, period);
 
         // Emit the PlanCreated event
-        emit PlanCreated(receiver, nextPlanId, block.timestamp);
+        emit PlanCreated(seller, broker, nextPlanId, block.timestamp);
 
         nextPlanId++;
         return nextPlanId - 1;
     }
 
+    /** 
+     * @dev Subscribe a user to a plan
+     * @param payer - Endereço do usuario
+     * @param planId - Id do plano mapeado
+     */
     function subscribe(address payer, uint planId) external {
         Plan storage plan = plans[planId];
         ERC20 token = ERC20(plan.token);
-        require(plan.receiver != address(0), "This plan does not exist");
+        require(plan.seller != address(0), "This plan does not exist");
 
         bool alreadySubscribed = isSubscribed(payer, planId);
         require(!alreadySubscribed, "Already subscribed to the plan");
 
-        token.transferFrom(payer, plan.receiver, plan.amount);
+        // Calculate payment amounts using division
+        uint256 sellerAmount = plan.amount * 85 / 100;
+        uint256 brokerAmount = plan.amount * 10 / 100;
+        uint256 adminAmount = plan.amount * 5 / 100;
+
+        // Transfer the amounts to the respective addresses
+        token.transferFrom(payer, plan.seller, sellerAmount);
+        token.transferFrom(payer, plan.broker, brokerAmount);
+        token.transferFrom(payer, admin, adminAmount);
+
         subscriptions[payer][planId] = Subscription(
             payer,
             block.timestamp,
@@ -100,11 +135,16 @@ contract RecurringPayments {
         Subscription storage subscription = subscriptions[payer][planId];
         Plan storage plan = plans[planId];
         ERC20 token = ERC20(plan.token);
-        require(
-            subscription.payer != address(0),
-            "this subscription does not exist"
-        );
+        require(subscription.payer != address(0), "This subscription does not exist");
 
-        token.transferFrom(payer, plan.receiver, plan.amount);
+        // Calculate payment amounts using division
+        uint256 sellerAmount = plan.amount * 85 / 100;
+        uint256 brokerAmount = plan.amount * 10 / 100;
+        uint256 adminAmount = plan.amount * 5 / 100;
+
+        // Transfer the amounts to the respective addresses
+        token.transferFrom(payer, plan.seller, sellerAmount);
+        token.transferFrom(payer, plan.broker, brokerAmount);
+        token.transferFrom(payer, admin, adminAmount);
     }
 }

@@ -15,11 +15,13 @@ contract RecurringPaymentsTest is Test {
     address private assinanteUserA;
     address private assinanteUserB;
     address private admin;
+    address private seller;
     address private corretor;
 
     uint256 private assinanteUserAPrivateKey;
     uint256 private assinanteUserBPrivateKey;
     uint256 private adminPrivateKey;
+    uint256 private sellerPrivateKey;
     uint256 private corretorPrivateKey;
 
     function setUp() public {
@@ -28,13 +30,15 @@ contract RecurringPaymentsTest is Test {
         (assinanteUserB, assinanteUserBPrivateKey) = makeAddrAndKey("assinanteUserB");
         (admin, adminPrivateKey) = makeAddrAndKey("admin");
         (corretor, corretorPrivateKey) = makeAddrAndKey("corretor");
+        (seller, sellerPrivateKey) = makeAddrAndKey("seller");
 
         /** @dev deploya um mock de token */
         anyToken = new ERC20Mock("Mock Token", "MTK");
 
-        deployer = new RecurringPaymentsDeploy();
-        deployer.run();
 
+        deployer = new RecurringPaymentsDeploy(admin);
+        deployer.run();
+    
         /**
          * @dev deploya esse contrato em uma evm local
          */
@@ -50,7 +54,7 @@ contract RecurringPaymentsTest is Test {
     function testSubscribe() public {
         // Create a plan first
         vm.prank(admin);
-        uint planId = recurringPayments.createPlan(address(corretor), address(anyToken), 100, 3600);
+        uint planId = recurringPayments.createPlan(address(seller), address(corretor), address(anyToken), 100 ether, 3600);
         vm.stopPrank();
 
         // Simulate a user subscribing to the plan
@@ -67,7 +71,7 @@ contract RecurringPaymentsTest is Test {
     function testCancel() public {
         // Create a plan and subscribe a user to it
         vm.prank(admin);
-        uint planId = recurringPayments.createPlan(address(corretor), address(anyToken), 100, 3600);
+        uint planId = recurringPayments.createPlan(address(seller), address(corretor), address(anyToken), 100 ether, 3600);
         vm.stopPrank();
 
         vm.prank(assinanteUserA);
@@ -86,9 +90,11 @@ contract RecurringPaymentsTest is Test {
 
     function testInitialPayment() public {
         console.log("------------------- Testando pagamento inicial do Plano ------------------- \n");
+
+        uint256 valueToPay = 100 ether;
         // Create a plan first
         vm.prank(admin);
-        uint planId = recurringPayments.createPlan(address(corretor), address(anyToken), 100 ether, 3600);
+        uint planId = recurringPayments.createPlan(address(seller), address(corretor), address(anyToken), valueToPay, 3600);
         vm.stopPrank();
 
         // Simulate a user subscribing and making the initial payment
@@ -117,56 +123,121 @@ contract RecurringPaymentsTest is Test {
 
         // Verify the token balance of the plan receiver after the initial payment
 
-        console.log("--> verificando se corretor recebeu 100 tokens");
+        console.log("--> verificando se vendedor recebeu 85% tokens");
+        uint256 newSellerBalance = anyToken.balanceOf(address(seller));
+        uint256 newBrokerBalance = anyToken.balanceOf(address(corretor));
+        uint256 newAdminBalance = anyToken.balanceOf(address(admin));
+
         assertEq(
-            anyToken.balanceOf(address(corretor)),
-            100 ether,
+            newSellerBalance,
+            valueToPay*85/100,
             "Incorrect balance after initial payment"
         );
-        console.log("corretor recebeu 100 tokens -> OK");
+        console.log("corretor recebeu 85% (85 tokens) -> OK");
+        console.log("\n");
+
+        console.log("--> Verificando se corretor recebeu 10% tokens");
+        assertEq(
+            newBrokerBalance,
+            valueToPay*10/100,
+            "Incorrect balance after initial payment"
+        );
+        console.log("corretor recebeu 10% (10 tokens) -> OK");
+        console.log("\n");
+
+        console.log("--> Verificando se admin recebeu 5% tokens");
+        assertEq(  
+            newAdminBalance,
+            valueToPay*5/100,
+            "Incorrect balance after initial payment"
+        );
+        console.log("admin recebeu 5% (5 tokens) -> OK");
+
+        console.log("\n");
+
+        console.log("---------------------------------------------------------");
+        console.log("------------------- SALDOS APOS PAGAMENTO ------------ \n");
+        console.log("newSellerBalance", newSellerBalance / (10**18));
+        console.log("newBrokerBalance", newBrokerBalance / (10**18));
+        console.log("newAdminBalance", newAdminBalance  / (10**18));
+        console.log("---------------------------------------------------------");
     }
 
-function testDoublePaymentPrevention() public {
-    // Criar um plano e inscrever um usuário nele
-    console.log("------------------- Testando Prevencao de pagamento duplo ------------------- \n");
+    function testDoublePaymentPrevention() public {
+        // Criar um plano e inscrever um usuário nele
+        console.log("------------------- Testando Prevencao de pagamento duplo ------------------- \n");
 
-    console.log("--> Criando um plano e inscrevendo um corretor nele com um token ERC20");
-    uint planId = recurringPayments.createPlan(address(corretor), address(anyToken), 100 ether, 3600);
+        console.log("--> Criando um plano e inscrevendo um corretor nele com um token ERC20");
 
-    console.log("Plano criado com sucesso");
-    console.log("\n");
-    console.log("-------------------------------------");
-    console.log("detalhes do plano: \n ");
-    console.log("id do plano: ", planId);
-    console.log("corretor: ", address(corretor));
-    console.log("token: ", address(anyToken));
-    console.log("valor: ", 100 ether);
-    console.log("periodo: ", 3600);
-    console.log("-------------------------------------");
-    console.log("\n");
+        uint256 valueToPay = 300 ether;
 
-    
+        uint planId = recurringPayments.createPlan(address(seller), address(corretor), address(anyToken), valueToPay, 3600);
 
-    // Subscribe the user to the plan
-    recurringPayments.subscribe(assinanteUserA, planId);
+        console.log("Plano criado com sucesso");
+        console.log("\n");
+        console.log("-------------------------------------");
+        console.log("detalhes do plano: \n ");
+        console.log("id do plano: ", planId);
+        console.log("vendedor: ", address(seller));
+        console.log("corretor: ", address(corretor));
+        console.log("token: ", address(anyToken));
+        console.log("valor: ", valueToPay);
+        console.log("periodo: ", 3600);
+        console.log("-------------------------------------");
+        console.log("\n");
 
-    // Attempt to subscribe the user to the same plan again
-    bool success = false;
-    try recurringPayments.subscribe{gas: 1000000}(assinanteUserA, planId) {
-        success = true; // double payment succeeded, which is incorrect
-    } catch {}
+        
 
-    // Check if a double payment was prevented
-    assertEq(success, false, "Double payment not prevented");
+        // Subscribe the user to the plan
+        recurringPayments.subscribe(assinanteUserA, planId);
 
-    // Check the token balance of the plan receiver after the double payment attempt
-    assertEq(
-        anyToken.balanceOf(address(corretor)),
-        100 ether,
-        "Unexpected double payment to plan receiver"
-    );
-}
+        // Attempt to subscribe the user to the same plan again
+        bool success = false;
+        try recurringPayments.subscribe{gas: 1000000}(assinanteUserA, planId) {
+            success = true; // double payment succeeded, which is incorrect
+        } catch {}
 
+        // Check if a double payment was prevented
+        assertEq(success, false, "Double payment not prevented");
 
+        uint256 newSellerBalance = anyToken.balanceOf(address(seller));
+        uint256 newBrokerBalance = anyToken.balanceOf(address(corretor));
+        uint256 newAdminBalance = anyToken.balanceOf(address(admin));
+        
 
+        console.log("--> verificando se vendedor recebeu 85% tokens");
+        assertEq(
+            newSellerBalance,
+            valueToPay*85/100,
+            "Incorrect balance after initial payment"
+        );
+        console.log("corretor recebeu 85% (85 tokens) -> OK");
+        console.log("\n");
+
+        console.log("--> Verificando se corretor recebeu 10% tokens");
+        assertEq(
+            newBrokerBalance,
+            valueToPay*10/100,
+            "Incorrect balance after initial payment"
+        );
+        console.log("corretor recebeu 10% (10 tokens) -> OK");
+        console.log("\n");
+
+        console.log("--> Verificando se admin recebeu 5% tokens");
+        assertEq(  
+            newAdminBalance,
+            valueToPay*5/100,
+            "Incorrect balance after initial payment"
+        );
+        console.log("admin recebeu 5% (5 tokens) -> OK");
+
+        console.log("\n");
+
+        console.log("---------------------------------------------------------");
+        console.log("------------------- SALDOS APOS PAGAMENTO ------------ \n");
+        console.log("newSellerBalance", newSellerBalance / (10**18));
+        console.log("newBrokerBalance", newBrokerBalance / (10**18));
+        console.log("newAdminBalance", newAdminBalance  / (10**18));
+        console.log("---------------------------------------------------------");
+    }
 }
