@@ -24,6 +24,9 @@ contract RecurringPaymentsTest is Test {
     uint256 private sellerPrivateKey;
     uint256 private corretorPrivateKey;
 
+    uint planId;
+    uint256 valueToPay = 100 ether;
+
     function setUp() public {
         /** @dev Cria enderecos na evm local para teste do fluxo */
         (assinanteUserA, assinanteUserAPrivateKey) = makeAddrAndKey("assinanteUserA");
@@ -49,14 +52,28 @@ contract RecurringPaymentsTest is Test {
         /** @dev esse processo minta 1000 tokens para usuarios que irao assinar */
         anyToken.mint(assinanteUserA, 1000 ether);
         anyToken.mint(assinanteUserB, 1000 ether);
+
+        /** @dev Inicializa um plano de pagamento recorrente */
+        planId = recurringPayments.createPlan(address(seller), address(corretor), address(anyToken), valueToPay, 3600);
+
+
+        console.log("--> Criando um plano e inscrevendo um corretor nele com um token ERC20");
+        console.log("Plano criado com sucesso");
+        console.log("\n");
+        console.log("-------------------------------------");
+        console.log("detalhes do plano: \n ");
+        console.log("id do plano: ", planId);
+        console.log("vendedor: ", address(seller));
+        console.log("corretor: ", address(corretor));
+        console.log("token: ", address(anyToken));
+        console.log("valor: ", valueToPay);
+        console.log("periodo: ", 3600);
+        console.log("-------------------------------------");
+        console.log("\n");
+
     }
 
-    function testSubscribe() public {
-        // Create a plan first
-        vm.prank(admin);
-        uint planId = recurringPayments.createPlan(address(seller), address(corretor), address(anyToken), 100 ether, 3600);
-        vm.stopPrank();
-
+    function testSubscribe() external {
         // Simulate a user subscribing to the plan
         vm.prank(assinanteUserA);
         recurringPayments.subscribe(assinanteUserA, planId);
@@ -68,35 +85,8 @@ contract RecurringPaymentsTest is Test {
         assertEq(period, 3600, "Incorrect period");
     }
 
-    function testCancel() public {
-        // Create a plan and subscribe a user to it
-        vm.prank(admin);
-        uint planId = recurringPayments.createPlan(address(seller), address(corretor), address(anyToken), 100 ether, 3600);
-        vm.stopPrank();
-
-        vm.prank(assinanteUserA);
-        recurringPayments.subscribe(assinanteUserA, planId);
-        vm.stopPrank();
-
-        // Cancel the subscription
-        vm.prank(assinanteUserA);
-        recurringPayments.cancel(assinanteUserA, planId);
-        vm.stopPrank();
-
-        // Check if the subscription is cancelled correctly
-        (address payer,,) = recurringPayments.subscriptions(assinanteUserA, planId);
-        assertEq(payer, address(0), "Subscription not cancelled");
-    }
-
-    function testInitialPayment() public {
+    function testInitialPayment() external {
         console.log("------------------- Testando pagamento inicial do Plano ------------------- \n");
-
-        uint256 valueToPay = 100 ether;
-        // Create a plan first
-        vm.prank(admin);
-        uint planId = recurringPayments.createPlan(address(seller), address(corretor), address(anyToken), valueToPay, 3600);
-        vm.stopPrank();
-
         // Simulate a user subscribing and making the initial payment
         vm.prank(assinanteUserA);
         // Subscribe after making the initial payment
@@ -163,31 +153,9 @@ contract RecurringPaymentsTest is Test {
         console.log("---------------------------------------------------------");
     }
 
-    function testDoublePaymentPrevention() public {
+    function testDoublePaymentPrevention() external {
         // Criar um plano e inscrever um usuário nele
         console.log("------------------- Testando Prevencao de pagamento duplo ------------------- \n");
-
-        console.log("--> Criando um plano e inscrevendo um corretor nele com um token ERC20");
-
-        uint256 valueToPay = 300 ether;
-
-        uint planId = recurringPayments.createPlan(address(seller), address(corretor), address(anyToken), valueToPay, 3600);
-
-        console.log("Plano criado com sucesso");
-        console.log("\n");
-        console.log("-------------------------------------");
-        console.log("detalhes do plano: \n ");
-        console.log("id do plano: ", planId);
-        console.log("vendedor: ", address(seller));
-        console.log("corretor: ", address(corretor));
-        console.log("token: ", address(anyToken));
-        console.log("valor: ", valueToPay);
-        console.log("periodo: ", 3600);
-        console.log("-------------------------------------");
-        console.log("\n");
-
-        
-
         // Subscribe the user to the plan
         recurringPayments.subscribe(assinanteUserA, planId);
 
@@ -239,5 +207,47 @@ contract RecurringPaymentsTest is Test {
         console.log("newBrokerBalance", newBrokerBalance / (10**18));
         console.log("newAdminBalance", newAdminBalance  / (10**18));
         console.log("---------------------------------------------------------");
+    }
+
+    function testIsSubscribed() external {
+        bool isSubscribedBefore = recurringPayments.isSubscribed(assinanteUserB, planId);
+        assertEq(isSubscribedBefore, false, "Payer should not be subscribed before");
+
+        vm.prank(assinanteUserB);
+        recurringPayments.subscribe(assinanteUserB, planId);
+        vm.stopPrank();
+
+        bool isSubscribedAfter = recurringPayments.isSubscribed(assinanteUserB, planId);
+        assertEq(isSubscribedAfter, true, "Payer should be subscribed after");
+    }
+
+    function testGetPlan() external {
+        (
+            address returnedSeller,
+            address returnedBroker,
+            address returnedToken,
+            uint returnedAmount,
+            uint returnedPeriod
+        ) = recurringPayments.getPlan(planId);
+
+        assertEq(returnedSeller, seller, "Returned seller should match");
+        assertEq(returnedBroker, corretor, "Returned broker should match");
+        assertEq(returnedToken, address(anyToken), "Returned token should match");
+        assertEq(returnedAmount, valueToPay, "Returned amount should match");
+        assertEq(returnedPeriod, 3600, "Returned period should match");
+    }
+
+    function testCancel() external {
+        vm.prank(assinanteUserB);
+        recurringPayments.subscribe(assinanteUserB, planId);
+        vm.stopPrank();
+
+        bool isSubscribedBefore = recurringPayments.isSubscribed(assinanteUserB, planId);
+        assertEq(isSubscribedBefore, true, "Payer should be subscribed before cancel");
+
+        recurringPayments.cancel(assinanteUserB, planId);
+
+        bool isSubscribedAfter = recurringPayments.isSubscribed(assinanteUserB, planId);
+        assertEq(isSubscribedAfter, false, "Payer should not be subscribed after cancel");
     }
 }
